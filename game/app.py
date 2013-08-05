@@ -12,6 +12,7 @@ pygame.font.init()
 font = pygame.font.Font("resources/Verdana Bold.ttf", 12)
 
 TILE_SIZE = 32
+LEVEL = 1
 
 screen = pygame.display.set_mode(
     (10*TILE_SIZE, 22*TILE_SIZE),
@@ -23,10 +24,11 @@ DIMENSIONS = (10, 22)
 border = pygame.image.load('resources/border.png')
 
 SCORE = 0
+calculations_per_frame = 0
 
 
 class Tile(pygame.Surface):
-    bound = True
+    bound = False
     surface = None
     # expect (r,g,b,a,)
     color = None
@@ -34,6 +36,7 @@ class Tile(pygame.Surface):
 
     def __init__(self, color, background=True):
         super(Tile, self).__init__((TILE_SIZE, TILE_SIZE,))
+        self.erase_me = False
         self.color = color
         self.fill(self.color)
         if not background:
@@ -58,6 +61,9 @@ class Tile(pygame.Surface):
                     bound = True
         self.bound = bound
 
+    def should_delete(self):
+        return self.erase_me
+
     def __repr__(self):
         return self.unicode()
 
@@ -74,11 +80,12 @@ green_tile = Tile(pygame.Color(0, 255, 0))
 blue_tile = Tile(pygame.Color(0, 0, 255))
 magenta_tile = Tile(pygame.Color(255, 0, 255))
 cyan_tile = Tile(pygame.Color(0, 255, 255))
+black_tile = Tile(pygame.Color(32, 32, 32, 20))
 
 tiles = [red_tile, green_tile, blue_tile,
          cyan_tile, magenta_tile, yellow_tile]
 
-level_file = io.open('levels/level1.txt').read()
+level_file = io.open('levels/blank_level.txt').read()
 
 code_to_tile = {
     'R': red_tile,
@@ -87,6 +94,7 @@ code_to_tile = {
     'C': cyan_tile,
     'M': magenta_tile,
     'Y': yellow_tile,
+    'K': black_tile
 }
 
 tiles = 'RGBCMY'
@@ -112,7 +120,6 @@ def random_level():
     return surface
 
 level_surface = get_level_surface(level_file)
-
 game_status = {
     'block_falling': False,
     'score': 0,
@@ -133,7 +140,6 @@ def shutdown():
 
 
 def generate_block():
-    # todo, randomize this.
     return [
         [random.choice(tiles), random.choice(tiles)],
         [random.choice(tiles), random.choice(tiles)]
@@ -247,7 +253,7 @@ while True:
         game_status['current'] = create_block()
         game_status['block_falling'] = True
 
-    game_status['block_pos'][1] += 1
+    game_status['block_pos'][1] += TILE_SIZE / 16
 
     if push_left:
         if game_status['block_pos'][0] > 0:
@@ -263,6 +269,9 @@ while True:
 
     bs = get_block_surface(game_status['current'])
 
+    next_surface = get_block_surface(game_status['next'])
+    next_surface = pygame.transform.scale(next_surface, (TILE_SIZE, TILE_SIZE))
+
     if drop is True:
         while not block_grounded():
             game_status['block_pos'][1] += 1
@@ -276,28 +285,31 @@ while True:
         game_status['current'] = None
 
     # clean up bound tiles that should be gone.
+
     for t in game_status['placed_tiles']:
-        if t.bound:
-            c = (t.get_at((TILE_SIZE/2, TILE_SIZE/2,)) +
-                 level_surface.get_at(t.position)
-                 )
-            if c.r == c.g == c.b == 255:
-                i = game_status['placed_tiles'].index(t)
-                del (game_status['placed_tiles'][i])
-                SCORE += 1
+        if t.bound and t.should_delete():
+            i = game_status['placed_tiles'].index(t)
+            del (game_status['placed_tiles'][i])
+            SCORE += 1
 
     #move the unbound tiles
     for t in game_status['placed_tiles']:
+        was_bound = t.bound
         t.calc_bound()
         if t.bound is False:
             t.position[1] += 1
 
     status_surface = font.render(
-        u"SCORE: %s" % (SCORE),
+        u"SCORE: %s CPF: %s Placed: %s:  " % (
+            SCORE,
+            calculations_per_frame,
+            len(game_status['placed_tiles'])
+        ),
         1,
         (255, 255, 255, 0)
     )
     cooldown()
+
     screen.blit(level_surface, (0, 64))
     screen.blit(bs, game_status['block_pos'])
     for t in game_status['placed_tiles']:
@@ -307,5 +319,11 @@ while True:
         )
     screen.fill(0, rect=pygame.Rect(0, 0, 640, 64))
     screen.blit(status_surface, (0, 0,))
+    screen.blit(
+        font.render("Next", 1, (255, 255, 255, 255)),
+        (TILE_SIZE*9, TILE_SIZE)
+    )
+    screen.blit(next_surface, (TILE_SIZE*9, 0))
     pygame.display.flip()
     clock.tick(60)
+    calculations_per_frame = 0
