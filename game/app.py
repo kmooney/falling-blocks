@@ -9,7 +9,10 @@ pygame.init()
 pygame.display.init()
 
 pygame.font.init()
-font = pygame.font.Font("resources/Verdana Bold.ttf", 12)
+font = pygame.font.Font("resources/Verdana Bold.ttf", 24)
+bigfont = pygame.font.Font("resources/Verdana Bold.ttf", 32)
+smallfont = pygame.font.Font("resources/Verdana Bold.ttf", 12)
+tinyfont = pygame.font.Font("resources/Verdana Bold.ttf", 10)
 
 TILE_SIZE = 32
 LEVEL = 1
@@ -20,11 +23,13 @@ screen = pygame.display.set_mode(
     16
 )
 
-DIMENSIONS = (10, 22)
+DIMENSIONS = (10, 20)
 border = pygame.image.load('resources/border.png')
 
 SCORE = 0
 calculations_per_frame = 0
+
+POSITION_MAP = {}
 
 
 class Tile(pygame.Surface):
@@ -47,6 +52,22 @@ class Tile(pygame.Surface):
         new_item = Tile(self.color, background=False)
         return new_item
 
+    def vacate_matrix(self):
+        try:
+            del (
+                POSITION_MAP[int(self.position[0]/TILE_SIZE)]
+                            [int(self.position[1]/TILE_SIZE)]
+            )
+        except KeyError:
+            pass
+
+    def populate_matrix(self):
+        x = int(self.position[0]/TILE_SIZE)
+        y = int(self.position[1]/TILE_SIZE)
+        if x not in POSITION_MAP:
+            POSITION_MAP[x] = {}
+        POSITION_MAP[x][y] = self
+
     def calc_bound(self):
         bound = False
         if self.position[1]+TILE_SIZE >= TILE_SIZE * 20:
@@ -59,9 +80,15 @@ class Tile(pygame.Surface):
                 sb = self.position[1] + TILE_SIZE
                 if t != self and tl == sl and tr == sr and sb == tt:
                     bound = True
+        if self.bound is True and bound is False:
+            self.vacate_matrix()
+        elif self.bound is False and bound is True:
+            self.populate_matrix()
         self.bound = bound
 
     def should_delete(self):
+        if self.erase_me:
+            self.vacate_matrix()
         return self.erase_me
 
     def __repr__(self):
@@ -120,17 +147,23 @@ def random_level():
     return surface
 
 level_surface = get_level_surface(level_file)
-game_status = {
-    'block_falling': False,
-    'score': 0,
-    'placed_tiles': [],
-    'current': None,
-    'next': None,
-    'block_pos': [TILE_SIZE*4, 0],
-    'move_cool': True,
-    'drop_cool': True,
-    'rotate_cool': True,
-}
+
+game_status = {}
+
+
+def reset_game_status():
+    global game_status
+    game_status = {
+        'block_falling': False,
+        'score': 0,
+        'placed_tiles': [],
+        'current': None,
+        'next': None,
+        'block_pos': [TILE_SIZE*4, 0],
+        'move_cool': True,
+        'drop_cool': True,
+        'rotate_cool': True,
+    }
 
 
 def shutdown():
@@ -140,24 +173,29 @@ def shutdown():
 
 
 def generate_block():
+    t1 = tiles[random.randint(0, LEVEL+1) % len(tiles)]
+    t2 = tiles[random.randint(0, LEVEL+1) % len(tiles)]
+    t3 = tiles[random.randint(0, LEVEL+1) % len(tiles)]
+    t4 = tiles[random.randint(0, LEVEL+1) % len(tiles)]
     return [
-        [random.choice(tiles), random.choice(tiles)],
-        [random.choice(tiles), random.choice(tiles)]
+        [t1, t2],
+        [t3, t4]
     ]
 
 
 def rotate_block(b, counter=False):
-    o = b[0][0]
-    if counter:
-        b[0][0] = b[0][1]
-        b[0][1] = b[1][1]
-        b[1][1] = b[1][0]
-        b[1][0] = o
-    else:
-        b[0][0] = b[1][0]
-        b[1][0] = b[1][1]
-        b[1][1] = b[0][1]
-        b[0][1] = o
+    if b is not None:
+        o = b[0][0]
+        if counter:
+            b[0][0] = b[0][1]
+            b[0][1] = b[1][1]
+            b[1][1] = b[1][0]
+            b[1][0] = o
+        else:
+            b[0][0] = b[1][0]
+            b[1][0] = b[1][1]
+            b[1][1] = b[0][1]
+            b[0][1] = o
 
 
 def get_block_surface(block):
@@ -219,9 +257,9 @@ def decompose_current_block():
             )
             tiles.append(tile)
     return tiles
-
+game_over = False
+reset_game_status()
 while True:
-    screen.fill(0)
     fps = clock.get_fps()
     for event in pygame.event.get([pygame.QUIT]):
         if event.type == pygame.QUIT:
@@ -232,18 +270,39 @@ while True:
     if keys[pygame.K_ESCAPE]:
         shutdown()
         break
-    if keys[pygame.K_j] and game_status['move_cool'] == 0:
+    LEVEL = int(SCORE / 10) + 1
+    game_over_surface = None
+    if game_over:
+        game_over_surface = \
+            bigfont.render(u"Game Over", 1, (255, 255, 255, 255))
+        try_again = smallfont.render(
+            u"Press Space to Try Again",
+            1,
+            (255, 255, 255, 255)
+        )
+        screen.blit(game_over_surface, (TILE_SIZE*1+16, TILE_SIZE*5))
+        screen.blit(try_again, (TILE_SIZE*2+18, TILE_SIZE*7-10))
+        pygame.display.flip()
+        clock.tick(60)
+        calculations_per_frame = 0
+        if keys[pygame.K_SPACE]:
+            reset_game_status()
+            game_status['drop_cool'] = 6
+            game_over = False
+        continue
+    if keys[pygame.K_LEFT] and game_status['move_cool'] == 0:
         push_left = True
         game_status['move_cool'] = 6
-    if keys[pygame.K_l] and game_status['move_cool'] == 0:
+    if keys[pygame.K_RIGHT] and game_status['move_cool'] == 0:
         push_right = True
         game_status['move_cool'] = 6
-    if keys[pygame.K_a] and game_status['rotate_cool'] == 0:
+    if keys[pygame.K_z] and game_status['rotate_cool'] == 0:
         rotate_block(game_status['current'], counter=True)
         game_status['rotate_cool'] = 9
-    if keys[pygame.K_s] and game_status['rotate_cool'] == 0:
+    if keys[pygame.K_x] and game_status['rotate_cool'] == 0:
         rotate_block(game_status['current'])
         game_status['rotate_cool'] = 9
+
     drop = False
     if keys[pygame.K_SPACE] and game_status['drop_cool'] == 0:
         drop = True
@@ -284,34 +343,79 @@ while True:
         game_status['block_pos'] = [TILE_SIZE * 4, 0]
         game_status['current'] = None
 
-    # clean up bound tiles that should be gone.
+    def get_map(x, y):
+        return POSITION_MAP.get(x, {}).get(y, None)
 
+    # sweep bound tiles for delete
+    seen_count = 0
+    last_seen = None
+    for x in range(DIMENSIONS[0]):
+        for y in range(DIMENSIONS[1]):
+            current = get_map(x, y)
+            above = get_map(x, y-1)
+            below = get_map(x, y+1)
+            before = get_map(x-1, y)
+            after = get_map(x+1, y)
+            nw = get_map(x-1, y-1)
+            sw = get_map(x-1, y+1)
+            ne = get_map(x+1, y-1)
+            se = get_map(x+1, y+1)
+            if current is not None and above is not None and below is not None:
+                if current.color == above.color == below.color:
+                    current.erase_me = True
+                    above.erase_me = True
+                    below.erase_me = True
+            if current is not None and \
+                    before is not None and after is not None:
+                if current.color == before.color == after.color:
+                    current.erase_me = True
+                    before.erase_me = True
+                    after.erase_me = True
+            if current is not None and ne is not None and sw is not None:
+                if ne.color == sw.color == current.color:
+                    current.erase_me = True
+                    ne.erase_me = True
+                    sw.erase_me = True
+            if current is not None and nw is not None and se is not None:
+                if se.color == nw.color == current.color:
+                    current.erase_me = True
+                    se.erase_me = True
+                    nw.erase_me = True
+
+    # clean up bound tiles that should be gone.
     for t in game_status['placed_tiles']:
-        if t.bound and t.should_delete():
+        if t.should_delete():
             i = game_status['placed_tiles'].index(t)
             del (game_status['placed_tiles'][i])
             SCORE += 1
 
     #move the unbound tiles
     for t in game_status['placed_tiles']:
-        was_bound = t.bound
         t.calc_bound()
         if t.bound is False:
             t.position[1] += 1
+        if t.bound is True and t.position[1] < 32:
+            game_over = True
 
     status_surface = font.render(
-        u"SCORE: %s CPF: %s Placed: %s:  " % (
+        u"Score: %s Level: %s  " %
+        (
             SCORE,
-            calculations_per_frame,
-            len(game_status['placed_tiles'])
+            LEVEL
         ),
-        1,
+        10,
         (255, 255, 255, 0)
     )
+    pygame.display.set_caption("Falling Blocks v0.1 - Level %s" % LEVEL)
     cooldown()
-
+    instructions = tinyfont.render(
+        "Use arrow keys to move, z and x to rotate",
+        1,
+        (255, 255, 255, 255)
+    )
     screen.blit(level_surface, (0, 64))
     screen.blit(bs, game_status['block_pos'])
+
     for t in game_status['placed_tiles']:
         screen.blit(
             t,
@@ -319,8 +423,9 @@ while True:
         )
     screen.fill(0, rect=pygame.Rect(0, 0, 640, 64))
     screen.blit(status_surface, (0, 0,))
+    screen.blit(instructions, (0, 32))
     screen.blit(
-        font.render("Next", 1, (255, 255, 255, 255)),
+        smallfont.render("Next", 1, (255, 255, 255, 255)),
         (TILE_SIZE*9, TILE_SIZE)
     )
     screen.blit(next_surface, (TILE_SIZE*9, 0))
