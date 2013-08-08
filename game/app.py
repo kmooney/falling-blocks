@@ -289,11 +289,7 @@ while True:
     if keys[pygame.K_ESCAPE]:
         shutdown()
         break
-    last_level = LEVEL
     LEVEL = int(SCORE / 25) + 1
-    if last_level != LEVEL:
-        game_status['placed_tiles'] = []
-        POSITION_MAP = {}
     game_over_surface = None
     if game_over:
         game_over_surface = \
@@ -370,7 +366,7 @@ while True:
     next_surface = get_block_surface(game_status['next'])
     next_surface = pygame.transform.scale(next_surface, (TILE_SIZE, TILE_SIZE))
 
-    if drop is True:
+    if drop is True and game_status['block_falling']:
         while not block_grounded():
             game_status['block_pos'][1] += 1
 
