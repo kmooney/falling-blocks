@@ -1,6 +1,7 @@
 import pygame
 import io
 import random
+from math import ceil
 
 clock = pygame.time.Clock()
 
@@ -30,6 +31,10 @@ SCORE = 0
 calculations_per_frame = 0
 
 POSITION_MAP = {}
+
+
+def get_map(x, y):
+    return POSITION_MAP.get(x, {}).get(y, None)
 
 
 class Tile(pygame.Surface):
@@ -108,6 +113,9 @@ blue_tile = Tile(pygame.Color(0, 0, 255))
 magenta_tile = Tile(pygame.Color(255, 0, 255))
 cyan_tile = Tile(pygame.Color(0, 255, 255))
 black_tile = Tile(pygame.Color(32, 32, 32, 20))
+orange_tile = Tile(pygame.Color(255, 128, 0))
+indigo_tile = Tile(pygame.Color(0, 128, 255))
+violet_tile = Tile(pygame.Color(128, 0, 255))
 
 tiles = [red_tile, green_tile, blue_tile,
          cyan_tile, magenta_tile, yellow_tile]
@@ -116,15 +124,18 @@ level_file = io.open('levels/blank_level.txt').read()
 
 code_to_tile = {
     'R': red_tile,
-    'G': green_tile,
-    'B': blue_tile,
-    'C': cyan_tile,
-    'M': magenta_tile,
+    'O': orange_tile,
     'Y': yellow_tile,
+    'G': green_tile,
+    'C': cyan_tile,
+    'B': blue_tile,
+    'I': indigo_tile,
+    'M': magenta_tile,
+    'V': violet_tile,
     'K': black_tile
 }
 
-tiles = 'RGBCMY'
+tiles = 'ROYGCBIMV'
 
 
 def get_level_surface(lf):
@@ -151,6 +162,10 @@ level_surface = get_level_surface(level_file)
 game_status = {}
 
 
+def tiles_are_moving():
+    return False in [t.bound for t in game_status['placed_tiles']]
+
+
 def reset_game_status():
     global game_status
     game_status = {
@@ -163,6 +178,7 @@ def reset_game_status():
         'move_cool': True,
         'drop_cool': True,
         'rotate_cool': True,
+        'next_cool': 1,
     }
 
 
@@ -242,6 +258,8 @@ def cooldown():
         game_status['move_cool'] -= 1
     if game_status['drop_cool'] > 0:
         game_status['drop_cool'] -= 1
+    if game_status['next_cool'] > 0:
+        game_status['next_cool'] -= 1
 
 
 def decompose_current_block():
@@ -255,6 +273,7 @@ def decompose_current_block():
             tile.position[1] = (
                 game_status['block_pos'][1] + TILE_SIZE * x
             )
+            tile.bound = False
             tiles.append(tile)
     return tiles
 game_over = False
@@ -270,7 +289,11 @@ while True:
     if keys[pygame.K_ESCAPE]:
         shutdown()
         break
-    LEVEL = int(SCORE / 10) + 1
+    last_level = LEVEL
+    LEVEL = int(SCORE / 25) + 1
+    if last_level != LEVEL:
+        game_status['placed_tiles'] = []
+        POSITION_MAP = {}
     game_over_surface = None
     if game_over:
         game_over_surface = \
@@ -308,25 +331,41 @@ while True:
         drop = True
         game_status['drop_cool'] = 18
 
-    if game_status['block_falling'] is False:
-        game_status['current'] = create_block()
-        game_status['block_falling'] = True
+    if game_status['block_falling'] is False and not tiles_are_moving():
+        if game_status['current'] is None:
+            game_status['current'] = create_block()
+        if game_status['next_cool'] == 0:
+            game_status['block_falling'] = True
+    else:
+        game_status['next_cool'] = 5
 
-    game_status['block_pos'][1] += TILE_SIZE / 16
+    if game_status['block_falling']:
+        game_status['block_pos'][1] += TILE_SIZE / 16
 
     if push_left:
-        if game_status['block_pos'][0] > 0:
-            game_status['block_pos'][0] -= TILE_SIZE
-        else:
-            game_status['block_pos'][0] = 0
+        t = get_map(
+            int(game_status['block_pos'][0]/TILE_SIZE) - 1,
+            ceil(game_status['block_pos'][1]/TILE_SIZE)
+        )
+        if t is None:
+            if game_status['block_pos'][0] > 0:
+                game_status['block_pos'][0] -= TILE_SIZE
+            else:
+                game_status['block_pos'][0] = 0
 
     if push_right:
-        if game_status['block_pos'][0] < TILE_SIZE * 8:
-            game_status['block_pos'][0] += TILE_SIZE
-        else:
-            game_status['block_pos'][0] = TILE_SIZE * 8
+        t = get_map(
+            int(game_status['block_pos'][0]/TILE_SIZE) + 2,
+            ceil(game_status['block_pos'][1]/TILE_SIZE)
+        )
+        if t is None:
+            if game_status['block_pos'][0] < TILE_SIZE * 8:
+                game_status['block_pos'][0] += TILE_SIZE
+            else:
+                game_status['block_pos'][0] = TILE_SIZE * 8
 
-    bs = get_block_surface(game_status['current'])
+    if game_status['current']:
+        bs = get_block_surface(game_status['current'])
 
     next_surface = get_block_surface(game_status['next'])
     next_surface = pygame.transform.scale(next_surface, (TILE_SIZE, TILE_SIZE))
@@ -335,18 +374,16 @@ while True:
         while not block_grounded():
             game_status['block_pos'][1] += 1
 
-    if block_grounded():
-        # calculate which are white here.
-        game_status['block_pos'][1] -= TILE_SIZE * 2
-        game_status['block_falling'] = False
-        game_status['placed_tiles'] += decompose_current_block()
-        game_status['block_pos'] = [TILE_SIZE * 4, 0]
-        game_status['current'] = None
+    if game_status['current']:
+        if block_grounded():
+            # calculate which are white here.
+            game_status['block_pos'][1] -= TILE_SIZE * 2
+            game_status['block_falling'] = False
+            game_status['placed_tiles'] += decompose_current_block()
+            game_status['block_pos'] = [TILE_SIZE * 4, 0]
+            game_status['current'] = None
 
-    def get_map(x, y):
-        return POSITION_MAP.get(x, {}).get(y, None)
-
-    # sweep bound tiles for delete
+        # sweep bound tiles for delete
     seen_count = 0
     last_seen = None
     for x in range(DIMENSIONS[0]):
